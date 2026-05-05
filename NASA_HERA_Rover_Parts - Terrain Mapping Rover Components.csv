@@ -1,0 +1,31 @@
+Part,Cost,Amount,Function,Notes,Link
+,,,,,
+Main Components,,,,,
+3d Printed Wheels,,4,,,
+Raspberry Pi 5,~$50,1,,"4 GB ~$60, 8 GB ~$80, 4 maybe even 8 GB is going to be needed to properly run mapping and processing properly",https://www.microcenter.com/product/673712/raspberry-pi-5                                                                  https://www.pishop.us/product/raspberry-pi-5-8gb/                                                                                                                                                        https://www.microcenter.com/product/673711/raspberry-pi-5 
+Multi Camera Adapter Module V2.2,~$50,1,To connect all the cameras,,r
+,,,,,
+Data Storage,,,,,
+`````,~$19,1,"store camera, SLAM, communication, sensor, etc data",,https://shop.sandisk.com/products/memory-cards/microsd-cards/sandisk-extreme-pro-uhs-i-microsd?sku=SDSQXCU-064G-GN6MA
+,,,,,
+Motors,,,,,
+Vex V5 Smart Motor,,4,,,https://www.vexrobotics.com/276-4840.html?srsltid=AfmBOop0-0NUITIntka5zQAM9_C7YvUlXxZ4ESdtKAwUj0ex6Y2mTZF1
+,,,,,
+Sensors & Cameras,,,,,
+SparkFun 6DoF IMU Breakout - BMI270 (Qwiic),~$19,1,"Provides linear acceleration and angular velocity.
+Role in SLAM: Short-term motion tracking, orientation estimation.","Limitation: Drift accumulates over time, needs correction from vision",https://www.sparkfun.com/sparkfun-6dof-imu-breakout-bmi270-qwiic.html 
+Wheel Encoder(built into V5 Smart Motor),N/A,,Provide odometry and works in sensor fusion to determine distance traveled,,https://www.vexrobotics.com/276-4840.html?srsltid=AfmBOop0-0NUITIntka5zQAM9_C7YvUlXxZ4ESdtKAwUj0ex6Y2mTZF1
+Raspberry Pi Cam NOIR Module 2,~$28,1,Low Light Vision,The terrain needs to have an IR light for the PI NOIR camera to work,https://www.microcenter.com/product/689245/element-14-raspberry-pi-camera-v2-noir
+Pi AI camera,,1,"- Detects landmarks, cubes, and obstacles using onboard ML.
+- Provides semantic vision (what objects are).
+- Works in low light with IR support.
+- Offloads vision tasks from Pi 5 CPU/GPU.",,https://www.waveshare.com/product/imx219-83-stereo-camera.htm 
+ToF camera,,1,"- Captures full depth images (distance per pixel).
+- Provides geometric vision (how far/shape of terrain).
+- Detects obstacles and uneven ground in real time..
+- Range ~0.1–4 m, ideal for small test area.",,
+2-Megapixel USB Wide-Angle Camera 160° FOV Driver-Free Compatible with ROS Robots Raspberry Pi and Jetson Controllers,~$25,1,rear hazcam when backing up to detect obstacles,,https://www.alibaba.com/product-detail/2-megapixel-USB-Wide-Angle-Camera_1601368444222.html?mark=google_shopping&seo=1 
+,,,,"Price is still TBD, Need to talk with the team",
+,,,,,
+Power,,,,,
+TBD,,,,,
