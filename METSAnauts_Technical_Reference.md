@@ -2,6 +2,8 @@
 **NASA HUNCH | HERA Rover & BothScape Simulation Project**
 **Ranchview High School | Team: Neil Rao, Arun Skanda Rebbapragada, Arnav Sangle, Advay Singi, Sanay Tyagi | Mentor: David Berry**
 
+**Website**: [metsanauts.com](https://www.metsanauts.com) | **Gallery**: [metsanauts.com/gallery](https://www.metsanauts.com/gallery) | **Codebase**: [github.com/skandacode/RoverSystemV2](https://github.com/skandacode/RoverSystemV2)
+
 ---
 
 ## 1. Program Context & Mission Need
@@ -119,6 +121,8 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 | v1/v2 (PDR–CDR) | Raspberry Pi 5 | Primary onboard compute; confirmed on research page |
 | FDR (current) | NVIDIA Jetson Nano | Central control; WiFi + LoRa interfaces; AI/ML processing |
 
+**FDR Jetson software stack**: Three independent systemd services run on the Jetson — Rover Controller (FastAPI hardware API), Jetson Mapper (ZED SDK, MJPEG + WebSocket streams), and WiFi Watchdog (auto-connect to ground station). See Section 14 for full architecture details.
+
 ### 4.2 Full v1/v2 Electronics Stack (PDR–CDR)
 - **SBC**: Raspberry Pi 5 + USB Camera
 - **GPIO expansion**: SparkFun Servo pHAT
@@ -129,18 +133,16 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 - **LoRa MCU**: RP2040 LoRa microcontroller (Adafruit USB-C PD version) connected to Pi via USB-A to USB-C
 
 ### 4.3 FDR Sensor Suite (Terrain Mapping Rover)
-| Component | Cost | Qty | Role |
+| Component | Cost | Qty (Per rover) | Role |
 |-----------|------|-----|------|
-| Raspberry Pi 5 (or Jetson Nano) | ~$50–80 | 1 | Main compute |
-| Multi Camera Adapter V2.2 | ~$50 | 1 | Multi-camera management |
-| SanDisk Extreme Pro 64GB microSD | ~$19 | 1 | SLAM, comms, sensor data storage |
-| Vex V5 Smart Motor | TBD | 4 | Drive + built-in odometry |
-| SparkFun 6DoF IMU (BMI270, Qwiic) | ~$19 | 1 | Linear accel + angular velocity; short-term motion tracking |
-| Pi Camera NOIR Module 2 | ~$28 | 1 | Low-light vision (requires IR light on terrain) |
-| Pi AI Camera (IMX219-83 stereo) | TBD | 1 | Object/landmark detection, semantic vision, onboard ML |
-| ToF Camera | TBD | 1 | Depth imaging (0.1–4 m range); obstacle/terrain geometry |
-| 2MP USB Wide-Angle 160° Camera | ~$25 | 1 | Rear hazard camera (reversing) |
-| ZED 2i Stereo Camera | — | 1 | Real-time 3D spatial mapping; mounted on support rovers |
+| Jetson Nano | $250 | 1 | Main compute |
+| NVME SSD | ~$130 | 1 | Storage |
+| Metal TT motor | ~$13 | 6 | Drive |
+| ZED 2i Stereo Camera | $500 | 1 | Real-time 3D spatial mapping; mounted on support rovers |
+| Motor Controller | $40 | 2 | Controlling Movement |
+| Servo Controller | $20 | 1 | Controlling Movement |
+| Gobilda Servos | $20 | 4 | Controlling Rocker Bogie |
+
 
 ### 4.4 Power System
 - **Primary**: 2S 18650 lithium-ion pack (solar rechargeable)
@@ -164,7 +166,7 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 | Infrastructure | Laptop-hosted LAN | Local | Direct rover connection; no internet required |
 
 ### 5.2 LoRa Hardware
-- **Radio chip**: SX1276
+- **Radio chip**: RFM95
 - **MCU**: RP2040 coprocessor — manages LoRa protocol **independently** from the main Pi; USB hot-swap capability (communication module replaceable without disassembly)
 - **Range**: ~1 km
 
@@ -194,12 +196,36 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 - Enables video feed transmission impossible over LoRa (243-byte LoRa payload insufficient for video)
 - Laptop hosts LAN as redundant path; rover connects directly without internet
 
-### 5.4 Control App
-- **Type**: Web-based app (astronaut-friendly)
-- **CDR features**: Rover health dashboard; Python command pad; live webcam feed; AI assist (generates rover control code automatically)
-- **FDR features**: AI-driven interface; predefined command library; no technical training required
-- **AI rationale**: HERAnauts may lack Python/CS background; AI code generation allows non-technical crew to control rover via natural language → generated Python
-- **Earlier app (PDR/v1)**: "HERA Command Encoder" — encoded commands to hex for LoRa transmission; decode from hex; simple UI
+### 5.4 Known Issue: LoRa Packet Loss
+- Occasional missed packets observed during field testing; root cause not fully diagnosed
+- Impact: minor operational nuisance; operator can manually resend commands
+- **Future work**: implement ACK/retry logic or idempotent command design to meet NASA reliability standards
+- This is an open problem for future teams — the protocol fragmentation and mesh relay are solid, but link-layer reliability needs improvement
+
+### 5.5 Control App — Ground Station
+
+**Stack:**
+- **Framework**: Flask (Python) web server running on the ground station laptop
+- **Architecture**: Single-page application (SPA) — all rover interaction happens in one browser view
+- **AI engine**: [Ollama](https://ollama.ai) running locally on the ground station laptop, serving `gemma4:e2b`
+- **Why local AI**: Moon and Mars have no internet access. The entire AI stack must operate offline. This is a hard constraint, not a preference. (Future teams: consider `llama.cpp` as a lighter-weight alternative to Ollama.)
+
+**AI Code Generation Flow:**
+1. Operator types a natural language command (e.g., "drive forward 2 meters and take a photo")
+2. Web app sends the prompt to Ollama (`gemma4:e2b`) via local HTTP call
+3. Ollama returns generated Python code
+4. Web app HTTP POSTs the Python code to the Rover Controller service on the Jetson
+5. FastAPI receives the code and executes it via `exec()` with full system access
+6. Rover performs the action
+
+**Execution model:**
+- Commands are **serialized** — only one command runs at a time
+- A running command can be **stopped early** via a stop endpoint
+- The generated Python has **full access to the rover's filesystem and hardware APIs** — this is intentional; it gives astronauts maximum flexibility without needing to anticipate every possible operation at design time
+- Security is a non-issue in the operational environment (closed LAN, no external network)
+- SSH access is also available on the Jetson for direct debugging
+
+**Earlier app (PDR/v1)**: "HERA Command Encoder" — encoded commands to hex for LoRa transmission; simple UI with no AI
 
 ---
 
@@ -210,7 +236,7 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 |-------|-------------|
 | Initial plan | 4 rovers (transport, manipulation, 2 support) |
 | PDR decision | Consolidate to 1 rover (budget/time) |
-| CDR presentation | 4 rovers shown in slides (still target) |
+| CDR presentation | 1 functional rover |
 | FDR/current | 3-rover swarm (Claw, Recon, Support) |
 
 ### 6.2 FDR Rover Roles
@@ -230,6 +256,7 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 ---
 
 ## 7. BothScape — Terrain Simulation Environment
+> Photos of the terrain and rover in operation: [metsanauts.com/gallery](https://www.metsanauts.com/gallery)
 
 ### 7.1 Physical Specifications
 | Attribute | PDR (Oct 2025) | CDR (Feb 2026) | FDR (current) |
@@ -243,7 +270,6 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 - Models lunar south pole: crater-within-crater topology (LUN-001)
 - Permanent shadow zones (permanently shadowed craters near Shackleton)
 - Reflective crater walls; simulated hydrogen deposits
-- 3D-printed rocks + scaled lunar surface materials (LUN-002)
 - Tests rover navigation under low-light conditions
 - Validates power system behavior under constrained solar input
 
@@ -264,7 +290,6 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 
 ### 7.5 Environmental Features
 - Day/night lighting simulation (≥3 ft walls required per spec)
-- IR lighting for Pi NOIR camera operation in dark regions
 - Modular sections for reconfiguration and transport
 
 ---
@@ -304,11 +329,11 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 | Batteries | $308.45 |
 | Miscellaneous | $250.00 |
 | Environment | $185.12 |
-| Arm Assembly | TBD |
-| Ground Station | TBD |
+| Arm Assembly | $125.34 |
+| Ground Station | $30 |
 | **Total (known)** | **~$4,686.40** |
 
-**Funding sources**: NASA HUNCH program; grant applications; corporate sponsorship (1 sponsor in negotiation as of Dec 2025); NVIDIA sponsorship (project sponsor per requirements doc)
+**Funding sources**: Mark Cuban Companies
 
 ---
 
@@ -334,7 +359,7 @@ Design and prototype a remotely operated robotic exploration swarm + an 8 ft × 
 | Electrostatic dust cleaning | MIT system (proposed); electrode + panel charge → contactless dust removal |
 | Half-tread hybrid wheels | Rear 4 wheels treaded, front 2 independent; balances grip, maneuverability, stability |
 | LoRa mesh protocol | Custom fragmentation + mesh relay; ~1 km range; JSON command/file operations |
-| WiFi + LoRa dual comms | WiFi primary (video/high-BW); LoRa fallback (long range); LAN as tertiary |
+| WiFi + LoRa dual comms | WiFi primary (video/high-BW); LoRa fallback (long range) |
 | Astronaut-friendly UI | Web app; AI code generation; predefined commands; no technical knowledge required |
 | WAGO modular connectors | Tool-free field replacement; repair without engineering background |
 | ZED 2i spatial mapping | Real-time 3D terrain maps across rover swarm; overlapping FOV coverage |
@@ -354,11 +379,70 @@ Per the outline, the following sections are drafted (PDR content) but FDR sectio
 
 ---
 
+## 14. Software Architecture
+
+### 14.1 Codebase Overview
+- **Repository**: [https://github.com/skandacode/RoverSystemV2](https://github.com/skandacode/RoverSystemV2)
+- **Deployment split**: Everything inside the `UI/` folder runs on the **ground station laptop**. Everything outside `UI/` runs on the **Jetson Nano** aboard the rover.
+
+### 14.2 Ground Station (UI/ folder)
+| Component | Technology | Role |
+|-----------|-----------|------|
+| Web server | Flask (Python) | Serves the single-page control app to the operator's browser |
+| AI inference | Ollama (`gemma4:e2b`) | Local LLM for natural language → Python code generation; runs entirely offline |
+| Control interface | SPA (single page) | Dashboard, video feed, map view, command pad, SSH terminal |
+
+### 14.3 Jetson Nano Services (3 independent systemd services)
+
+All three services start automatically on boot via **systemd**. They are fully independent — no service depends on another being running. Plugging in the battery is the only operator action required; the rover is ready to receive commands within boot time.
+
+#### Service 1: Rover Controller
+- **Type**: FastAPI HTTP server
+- **Role**: Hardware abstraction layer — accepts Python code from the ground station and executes it on the rover
+- **Code execution**: HTTP POST → `exec()` with full system access
+- **Concurrency**: One command runs at a time; early stop supported via stop endpoint
+- **Interfaces**: Motor controllers (I2C), servo driver (I2C), onboard sensors
+
+#### Service 2: Jetson Mapper
+- **Type**: Background service using the ZED SDK
+- **Role**: Drives the ZED 2i stereo camera for spatial mapping, object detection, and video streaming
+- **Video stream**: MJPEG stream (consumed by the web app for live video feed)
+- **Map data**: WebSocket stream (consumed by the web app for real-time 3D map display)
+- **SDK**: Standard ZED SDK — refer to [Stereolabs ZED SDK documentation](https://www.stereolabs.com/docs) for integration details
+
+#### Service 3: WiFi Watchdog
+- **Type**: Lightweight monitoring service
+- **Role**: Automatically connects the Jetson to the ground station's WiFi access point on boot and reconnects if the link drops
+- **Why**: Ensures the rover is always reachable over WiFi without any operator intervention — critical for a system operated by non-technical crew
+
+### 14.4 Data Flow Summary
+```
+Operator (browser)
+    │
+    ├─ Natural language prompt ──→ Ollama (gemma4:e2b, local) ──→ Python code
+    │
+    ├─ HTTP POST (Python code) ──→ Rover Controller (FastAPI) ──→ exec() ──→ hardware
+    │
+    ├─ MJPEG stream (video) ←────── Jetson Mapper (ZED 2i)
+    │
+    └─ WebSocket (3D map) ←──────── Jetson Mapper (ZED 2i)
+```
+
+### 14.5 Design Principles
+- **Offline-first**: No component requires internet. Ollama runs local models specifically because the operational environment (Moon/Mars) has no connectivity.
+- **Zero-configuration startup**: All services are systemd units. The rover is operational the moment it boots.
+- **Full-access execution model**: Rather than pre-defining a fixed command API, the system executes arbitrary Python. This gives HERAnauts (via AI assistance) the ability to instruct the rover to perform any operation without the software team anticipating it in advance.
+- **Service independence**: The three Jetson services share no runtime state. Any service can crash, restart, or be updated without affecting the others.
+
+---
+
 ---
 
 ## 13. Field Testing Evidence (from metsanauts.com Gallery)
 
-Gallery documents **12 photos** confirming the rover has been physically built and field-tested:
+Full photo documentation is available at **[metsanauts.com/gallery](https://www.metsanauts.com/gallery)**.
+
+The gallery documents **12 photos** confirming the rover has been physically built and field-tested:
 - Rover with tread wheels on terrain (operational)
 - Team controlling rover via laptop outdoors (remote operation confirmed)
 - Overhead view of rover structure and component layout
@@ -371,18 +455,6 @@ Gallery documents **12 photos** confirming the rover has been physically built a
 
 This confirms: rover reached operational status; outdoor field testing conducted; remote laptop control demonstrated; at least 2 rover iterations built (prototype + operational).
 
----
-
-## 14. Cross-Document Discrepancies (Reconciliation Notes)
-
-| Item | Earlier docs | Newest trifold | Website | Resolution |
-|------|-------------|----------------|---------|------------|
-| Rover count | 4 (then consolidated to 1) | 3 (Claw, Recon, Support) | 4 | Website/CDR = target; newest trifold = current build plan; ask team |
-| Terrain size | 8 ft × 8 ft (CDR plan) | 4 ft × 4 ft modular | 8 ft × 8 ft | Likely downsized for portability; ask team for actual built size |
-| Name "Skanda" | White paper outline | Not used | Not used | "Arun Rebbapragada" is the consistent name; "Skanda" appears only in one doc |
-| Primary compute | Raspberry Pi 3–5 → Pi 4B (website) | Jetson Nano | Raspberry Pi 4B | Pi 4B confirmed built; Jetson Nano may be planned/FDR upgrade |
-| LoRa sections | 5.2, 5.3, 5.4 (renumbered after hardware section added) | — | — | Use updated numbering above |
+For additional project context, visit the main project site at [metsanauts.com](https://www.metsanauts.com).
 
 ---
-
-*Synthesized from: PDR Trifold (Oct 2025), NASA Hunch Final Script (Dec 2025), CDR Presentation (Feb 2026), FDR/Newest Trifold (2026), BEST Robotics requirements doc, Rover Notes, White Paper Outline, Parts CSV, metsanauts.com (mission, team, innovations, research, gallery pages). Most recent design state reflected in FDR/newest trifold + website.*
